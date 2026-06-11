@@ -609,6 +609,28 @@ export function DeFiSummerApp() {
     action();
   };
 
+  const applyOptimisticStake = (amountNumber: number, baseVaultState: OnchainVaultSnapshot) => {
+    setVaultState((current) => {
+      const source = current ?? baseVaultState;
+      return {
+        ...source,
+        configured: true,
+        tokenBalance: Math.max(0, source.tokenBalance - amountNumber),
+        stakedBalance: source.stakedBalance + amountNumber,
+        totalStaked: source.totalStaked + amountNumber,
+        stakingAllowance: Math.max(0, source.stakingAllowance - amountNumber)
+      };
+    });
+    setLotteryState((current) =>
+      current
+        ? {
+            ...current,
+            yourStEmojiAvailable: current.yourStEmojiAvailable + amountNumber
+          }
+        : current
+    );
+  };
+
   const mintFaucetAsset = (symbol: AssetSymbol) => {
     void runGameAction((address) => mintFakeAssetAction(address, symbol));
   };
@@ -773,7 +795,9 @@ export function DeFiSummerApp() {
       });
       if (stakeTx) {
         await waitForWalletReceipt(stakeTx);
-        await refreshVault(walletAddress);
+        applyOptimisticStake(amountNumber, latestVaultState);
+        setLog(`Stake landed. ${formatToken(amountNumber)} stDOPAMINE should be available now; onchain refresh is catching up.`);
+        void refreshVault(walletAddress);
       }
     } catch (error) {
       setLog(error instanceof Error ? error.message : "Stake transaction failed.");

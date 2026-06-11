@@ -118,7 +118,7 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function withRpcRetry<T>(label: string, fn: () => Promise<T>): Promise<T> {
   let lastError: unknown;
-  for (let attempt = 1; attempt <= 5; attempt += 1) {
+  for (let attempt = 1; attempt <= 7; attempt += 1) {
     try {
       const result = await fn();
       await sleep(125);
@@ -130,12 +130,20 @@ async function withRpcRetry<T>(label: string, fn: () => Promise<T>): Promise<T> 
         message.toLowerCase().includes("rate limit") ||
         message.toLowerCase().includes("closed") ||
         message.toLowerCase().includes("timeout");
-      if (!isTransient || attempt === 5) break;
-      await sleep(500 * attempt);
+      if (!isTransient || attempt === 7) break;
+      await sleep(650 * attempt);
     }
   }
   const message = lastError instanceof Error ? lastError.message : String(lastError);
   throw new Error(`${label} failed: ${message}`);
+}
+
+async function optionalRpcRead<T>(label: string, fallback: T, fn: () => Promise<T>): Promise<T> {
+  try {
+    return await withRpcRetry(label, fn);
+  } catch {
+    return fallback;
+  }
 }
 
 function getDevBribeTier(amount: number) {
@@ -1362,6 +1370,8 @@ export async function loadOnchainVaultAction(address: string): Promise<OnchainVa
   const publicClient = createPublicClient({ transport: http(rpcUrl) });
   const readContract = <T>(label: string, parameters: Parameters<typeof publicClient.readContract>[0]) =>
     withRpcRetry(label, () => publicClient.readContract(parameters) as Promise<T>);
+  const optionalReadContract = <T>(label: string, fallback: T, parameters: Parameters<typeof publicClient.readContract>[0]) =>
+    optionalRpcRead(label, fallback, () => publicClient.readContract(parameters) as Promise<T>);
   const tokenBalance = await readContract<bigint>("DOPAMINE wallet balance", {
     address: tokenAddress,
     abi: EMOJI_TOKEN_ABI,
@@ -1391,12 +1401,12 @@ export async function loadOnchainVaultAction(address: string): Promise<OnchainVa
     functionName: "allowance",
     args: [walletAddress, dumpVaultAddress]
   });
-  const currentEpochId = await readContract<bigint>("Current lottery epoch", {
+  const currentEpochId = await optionalReadContract<bigint>("Current lottery epoch", BigInt(0), {
     address: dumpVaultAddress,
     abi: EMOJI_DUMP_VAULT_ABI,
     functionName: "currentEpochId"
   });
-  const vaultTokenBalance = await readContract<bigint>("Dump vault DOPAMINE balance", {
+  const vaultTokenBalance = await optionalReadContract<bigint>("Dump vault DOPAMINE balance", BigInt(0), {
     address: tokenAddress,
     abi: EMOJI_TOKEN_ABI,
     functionName: "balanceOf",
@@ -1412,13 +1422,17 @@ export async function loadOnchainVaultAction(address: string): Promise<OnchainVa
   let dumpedThisEpoch = 0;
 
   if (currentEpochId > BigInt(0)) {
-    const epoch = await readContract<readonly [bigint, bigint, bigint, bigint, `0x${string}`, boolean, bigint]>("Current lottery epoch details", {
-      address: dumpVaultAddress,
-      abi: EMOJI_DUMP_VAULT_ABI,
-      functionName: "epochs",
-      args: [currentEpochId]
-    });
-    const dumpedByWallet = await readContract<bigint>("Wallet dumped this epoch", {
+    const epoch = await optionalReadContract<readonly [bigint, bigint, bigint, bigint, `0x${string}`, boolean, bigint]>(
+      "Current lottery epoch details",
+      [BigInt(0), BigInt(0), BigInt(0), BigInt(0), zeroAddress, false, BigInt(0)],
+      {
+        address: dumpVaultAddress,
+        abi: EMOJI_DUMP_VAULT_ABI,
+        functionName: "epochs",
+        args: [currentEpochId]
+      }
+    );
+    const dumpedByWallet = await optionalReadContract<bigint>("Wallet dumped this epoch", BigInt(0), {
       address: dumpVaultAddress,
       abi: EMOJI_DUMP_VAULT_ABI,
       functionName: "dumpedByEpoch",
