@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { FormFeedback } from "@/components/form-feedback";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -29,10 +28,7 @@ export const metadata: Metadata = {
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body>
-        {children}
-        <FormFeedback />
-      </body>
+      <body>{children}</body>
     </html>
   );
 }
