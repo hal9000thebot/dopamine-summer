@@ -114,6 +114,30 @@ function formatTokenUnits(value: bigint) {
   return Number(formatUnits(value, 18));
 }
 
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function withRpcRetry<T>(label: string, fn: () => Promise<T>): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= 5; attempt += 1) {
+    try {
+      const result = await fn();
+      await sleep(125);
+      return result;
+    } catch (error) {
+      lastError = error;
+      const message = error instanceof Error ? error.message : String(error);
+      const isTransient =
+        message.toLowerCase().includes("rate limit") ||
+        message.toLowerCase().includes("closed") ||
+        message.toLowerCase().includes("timeout");
+      if (!isTransient || attempt === 5) break;
+      await sleep(500 * attempt);
+    }
+  }
+  const message = lastError instanceof Error ? lastError.message : String(lastError);
+  throw new Error(`${label} failed: ${message}`);
+}
+
 function getDevBribeTier(amount: number) {
   return DEV_BRIBE_TIERS.find((tier) => amount >= tier.amount) ?? null;
 }
@@ -1336,23 +1360,48 @@ export async function loadOnchainVaultAction(address: string): Promise<OnchainVa
   }
 
   const publicClient = createPublicClient({ transport: http(rpcUrl) });
-  const [
-    tokenBalance,
-    stakedBalance,
-    totalStaked,
-    stakingAllowance,
-    dumpAllowance,
-    currentEpochId,
-    vaultTokenBalance
-  ] = await Promise.all([
-    publicClient.readContract({ address: tokenAddress, abi: EMOJI_TOKEN_ABI, functionName: "balanceOf", args: [walletAddress] }),
-    publicClient.readContract({ address: stakingAddress, abi: EMOJI_STAKING_ABI, functionName: "stakedBalanceOf", args: [walletAddress] }),
-    publicClient.readContract({ address: stakingAddress, abi: EMOJI_STAKING_ABI, functionName: "totalStaked" }),
-    publicClient.readContract({ address: tokenAddress, abi: EMOJI_TOKEN_ABI, functionName: "allowance", args: [walletAddress, stakingAddress] }),
-    publicClient.readContract({ address: tokenAddress, abi: EMOJI_TOKEN_ABI, functionName: "allowance", args: [walletAddress, dumpVaultAddress] }),
-    publicClient.readContract({ address: dumpVaultAddress, abi: EMOJI_DUMP_VAULT_ABI, functionName: "currentEpochId" }),
-    publicClient.readContract({ address: tokenAddress, abi: EMOJI_TOKEN_ABI, functionName: "balanceOf", args: [dumpVaultAddress] })
-  ]);
+  const readContract = <T>(label: string, parameters: Parameters<typeof publicClient.readContract>[0]) =>
+    withRpcRetry(label, () => publicClient.readContract(parameters) as Promise<T>);
+  const tokenBalance = await readContract<bigint>("DOPAMINE wallet balance", {
+    address: tokenAddress,
+    abi: EMOJI_TOKEN_ABI,
+    functionName: "balanceOf",
+    args: [walletAddress]
+  });
+  const stakedBalance = await readContract<bigint>("Staked DOPAMINE balance", {
+    address: stakingAddress,
+    abi: EMOJI_STAKING_ABI,
+    functionName: "stakedBalanceOf",
+    args: [walletAddress]
+  });
+  const totalStaked = await readContract<bigint>("Total staked DOPAMINE", {
+    address: stakingAddress,
+    abi: EMOJI_STAKING_ABI,
+    functionName: "totalStaked"
+  });
+  const stakingAllowance = await readContract<bigint>("Staking allowance", {
+    address: tokenAddress,
+    abi: EMOJI_TOKEN_ABI,
+    functionName: "allowance",
+    args: [walletAddress, stakingAddress]
+  });
+  const dumpAllowance = await readContract<bigint>("Dump allowance", {
+    address: tokenAddress,
+    abi: EMOJI_TOKEN_ABI,
+    functionName: "allowance",
+    args: [walletAddress, dumpVaultAddress]
+  });
+  const currentEpochId = await readContract<bigint>("Current lottery epoch", {
+    address: dumpVaultAddress,
+    abi: EMOJI_DUMP_VAULT_ABI,
+    functionName: "currentEpochId"
+  });
+  const vaultTokenBalance = await readContract<bigint>("Dump vault DOPAMINE balance", {
+    address: tokenAddress,
+    abi: EMOJI_TOKEN_ABI,
+    functionName: "balanceOf",
+    args: [dumpVaultAddress]
+  });
 
   let epochStartsAt: string | null = null;
   let epochEndsAt: string | null = null;
@@ -1363,10 +1412,18 @@ export async function loadOnchainVaultAction(address: string): Promise<OnchainVa
   let dumpedThisEpoch = 0;
 
   if (currentEpochId > BigInt(0)) {
-    const [epoch, dumpedByWallet] = await Promise.all([
-      publicClient.readContract({ address: dumpVaultAddress, abi: EMOJI_DUMP_VAULT_ABI, functionName: "epochs", args: [currentEpochId] }),
-      publicClient.readContract({ address: dumpVaultAddress, abi: EMOJI_DUMP_VAULT_ABI, functionName: "dumpedByEpoch", args: [currentEpochId, walletAddress] })
-    ]);
+    const epoch = await readContract<readonly [bigint, bigint, bigint, bigint, `0x${string}`, boolean, bigint]>("Current lottery epoch details", {
+      address: dumpVaultAddress,
+      abi: EMOJI_DUMP_VAULT_ABI,
+      functionName: "epochs",
+      args: [currentEpochId]
+    });
+    const dumpedByWallet = await readContract<bigint>("Wallet dumped this epoch", {
+      address: dumpVaultAddress,
+      abi: EMOJI_DUMP_VAULT_ABI,
+      functionName: "dumpedByEpoch",
+      args: [currentEpochId, walletAddress]
+    });
     const epochTuple = epoch as readonly [bigint, bigint, bigint, bigint, `0x${string}`, boolean, bigint];
     epochStartsAt = Number(epochTuple[0]) > 0 ? new Date(Number(epochTuple[0]) * 1000).toISOString() : null;
     epochEndsAt = Number(epochTuple[1]) > 0 ? new Date(Number(epochTuple[1]) * 1000).toISOString() : null;

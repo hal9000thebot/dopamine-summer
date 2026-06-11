@@ -921,21 +921,38 @@ export function DeFiSummerApp() {
   };
 
   const dumpEmojiToLottery = async (forcedAmount?: string) => {
-    if (!walletAddress || !vaultState?.tokenAddress || !vaultState.dumpVaultAddress) return;
+    if (!walletAddress) {
+      setLog("Connect wallet before dumping. The lottery requires a real degen signature.");
+      return;
+    }
+    if (!vaultState?.tokenAddress || !vaultState.dumpVaultAddress) {
+      setLog("Onchain vault state is still loading. Try again in a few seconds.");
+      await refreshVault(walletAddress);
+      return;
+    }
     setIsBusy(true);
     try {
+      const latestVaultState = await loadOnchainVaultAction(walletAddress);
+      setVaultState(latestVaultState);
+      setLotteryState(await loadLotteryAction(walletAddress, latestVaultState.stakedBalance));
+      if (!latestVaultState.tokenAddress || !latestVaultState.dumpVaultAddress) {
+        throw new Error("Dump vault is not configured.");
+      }
       const amountInput = forcedAmount ?? lotteryDumpAmount;
       const amountNumber = Number(amountInput);
       if (!Number.isFinite(amountNumber) || amountNumber <= 0) throw new Error("Enter DOPAMINE to dump.");
-      if (amountNumber > vaultState.tokenBalance) throw new Error("Not enough onchain DOPAMINE to dump that amount.");
+      if (amountNumber > latestVaultState.tokenBalance) {
+        throw new Error(`Not enough onchain DOPAMINE to dump that amount. App sees ${formatToken(latestVaultState.tokenBalance)} DOPAMINE.`);
+      }
       const amount = parseEmojiAmount(amountInput);
-      if (vaultState.dumpAllowance < amountNumber) {
+      if (latestVaultState.dumpAllowance < amountNumber) {
         const approvalTx = await sendVaultTransaction({
           label: "Dump approval",
-          to: vaultState.tokenAddress,
+          to: latestVaultState.tokenAddress,
           abi: EMOJI_TOKEN_ABI,
           functionName: "approve",
-          args: [vaultState.dumpVaultAddress, amount]
+          args: [latestVaultState.dumpVaultAddress, amount],
+          vault: latestVaultState
         });
         if (approvalTx) {
           setLog("Dump approval submitted. Waiting for it to land before dumping.");
@@ -944,10 +961,11 @@ export function DeFiSummerApp() {
       }
       const txHash = await sendVaultTransaction({
         label: "Onchain dump",
-        to: vaultState.dumpVaultAddress,
+        to: latestVaultState.dumpVaultAddress,
         abi: EMOJI_DUMP_VAULT_ABI,
         functionName: "dump",
-        args: [amount]
+        args: [amount],
+        vault: latestVaultState
       });
       if (!txHash) return;
       await waitForWalletReceipt(txHash);
@@ -955,7 +973,7 @@ export function DeFiSummerApp() {
         walletAddress,
         amountNumber,
         txHash,
-        vaultState.stakedBalance
+        latestVaultState.stakedBalance
       );
       applySnapshot(result.game);
       setLotteryState(result.lottery);
@@ -1560,7 +1578,7 @@ export function DeFiSummerApp() {
               <input value={lotteryDumpAmount} onChange={(event) => setLotteryDumpAmount(event.target.value)} inputMode="decimal" />
             </label>
             <div className="dump-controls">
-              <button type="button" className={`danger ${!walletAddress ? "wallet-gated" : ""}`} onClick={(event) => runWalletAction(event, () => void dumpEmojiToLottery())} disabled={isBusy}>
+              <button type="button" className={`danger ${!walletAddress ? "wallet-gated" : ""}`} onClick={() => void dumpEmojiToLottery()} disabled={isBusy}>
                 DUMP
               </button>
               <button type="button" className="secondary" onClick={() => setIsDumpModalOpen(false)}>
