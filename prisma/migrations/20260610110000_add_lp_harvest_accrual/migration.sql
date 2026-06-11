@@ -1,0 +1,2 @@
+-- AlterTable
+ALTER TABLE "LiquidityPosition" ADD COLUMN "lastHarvestAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP;

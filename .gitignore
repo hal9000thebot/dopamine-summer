@@ -1,0 +1,17 @@
+node_modules
+.next
+out
+dist
+coverage
+tmp
+artifacts
+cache
+.hardhat-home
+
+.env
+.env*.local
+.vercel
+
+*.log
+*.tsbuildinfo
+.DS_Store

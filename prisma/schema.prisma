@@ -1,0 +1,372 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  OWNER
+  ADMIN
+  MEMBER
+  INVITED
+}
+
+enum Channel {
+  X
+  LINKEDIN
+}
+
+enum TopicStatus {
+  DRAFT
+  ACTIVE
+  ARCHIVED
+}
+
+enum GeneratedPostStatus {
+  GENERATED
+  SELECTED
+  COPIED
+  REJECTED
+}
+
+enum FakeAssetSymbol {
+  FETH
+  FHYPE
+  FUSDC
+  FUSDT
+  FWBTC
+}
+
+model User {
+  id              String                @id @default(cuid())
+  email           String                @unique
+  name            String
+  role            UserRole              @default(MEMBER)
+  personaId       String?
+  persona         Persona?              @relation(fields: [personaId], references: [id])
+  generatedPosts  GeneratedPost[]
+  selectedPosts   SelectedPost[]
+  feedback        PostFeedback[]
+  recommendations TopicRecommendation[]
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+}
+
+model Persona {
+  id             String          @id @default(cuid())
+  name           String          @unique
+  description    String
+  toneRules      Json
+  vocabularyRules Json?
+  framingRules   Json?
+  users          User[]
+  generatedPosts GeneratedPost[]
+  referencePosts ReferencePost[]
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+}
+
+model Campaign {
+  id          String   @id @default(cuid())
+  title       String
+  summary     String
+  status      TopicStatus @default(ACTIVE)
+  startsAt    DateTime?
+  endsAt      DateTime?
+  topics      Topic[]
+  referencePosts ReferencePost[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Topic {
+  id              String                @id @default(cuid())
+  campaignId      String?
+  campaign        Campaign?             @relation(fields: [campaignId], references: [id])
+  title           String
+  summary         String
+  status          TopicStatus            @default(ACTIVE)
+  priority        Int                    @default(0)
+  audience        String[]
+  channels        Channel[]
+  talkingPoints   TalkingPoint[]
+  generatedPosts  GeneratedPost[]
+  selectedPosts   SelectedPost[]
+  recommendations TopicRecommendation[]
+  referencePosts   ReferencePost[]
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
+}
+
+model TalkingPoint {
+  id         String   @id @default(cuid())
+  topicId    String
+  topic      Topic    @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  type       String
+  content    String
+  sourceUrl  String?
+  importance Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model BrandContextSection {
+  id        String   @id @default(cuid())
+  title     String   @unique
+  category  String
+  content   String
+  isActive  Boolean  @default(true)
+  priority  Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model GeneratedPost {
+  id               String              @id @default(cuid())
+  userId           String
+  user             User                @relation(fields: [userId], references: [id])
+  topicId          String
+  topic            Topic               @relation(fields: [topicId], references: [id])
+  personaId        String
+  persona          Persona             @relation(fields: [personaId], references: [id])
+  channel          Channel
+  variantIndex     Int
+  inputConfig      Json
+  promptVersion    String
+  provider         String
+  model            String
+  content          String
+  angle            String
+  rationale        String
+  similarityScore  Decimal?
+  duplicateOfPostId String?
+  qualityFlags     Json?
+  status           GeneratedPostStatus @default(GENERATED)
+  selectedPost     SelectedPost?
+  feedback         PostFeedback[]
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+}
+
+model SelectedPost {
+  id              String        @id @default(cuid())
+  generatedPostId String        @unique
+  generatedPost   GeneratedPost @relation(fields: [generatedPostId], references: [id])
+  userId          String
+  user            User          @relation(fields: [userId], references: [id])
+  topicId         String
+  topic           Topic         @relation(fields: [topicId], references: [id])
+  originalContent String
+  editedContent   String
+  wasEdited       Boolean       @default(false)
+  intendedChannel Channel
+  copiedAt        DateTime?
+  createdAt       DateTime      @default(now())
+}
+
+model PostFeedback {
+  id               String        @id @default(cuid())
+  generatedPostId  String
+  generatedPost    GeneratedPost @relation(fields: [generatedPostId], references: [id])
+  userId           String
+  user             User          @relation(fields: [userId], references: [id])
+  originalityScore Int
+  accuracyScore    Int
+  qualityScore     Int
+  comment          String?
+  createdAt        DateTime      @default(now())
+}
+
+model TopicRecommendation {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  topicId   String
+  topic     Topic    @relation(fields: [topicId], references: [id])
+  note      String?
+  createdAt DateTime @default(now())
+
+  @@unique([userId, topicId])
+}
+
+model AppSetting {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model ReferencePost {
+  id         String    @id @default(cuid())
+  source     String
+  channel    Channel
+  label      String
+  author     String?
+  url        String?
+  content    String
+  notes      String?
+  personaId  String?
+  persona    Persona?  @relation(fields: [personaId], references: [id])
+  topicId    String?
+  topic      Topic?    @relation(fields: [topicId], references: [id], onDelete: SetNull)
+  campaignId String?
+  campaign   Campaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+}
+
+model GameWallet {
+  id                String              @id @default(cuid())
+  address           String              @unique
+  displayAddress    String
+  faucetClicks      Int                 @default(0)
+  panicClicks        Int                 @default(0)
+  totalPendingEmoji Decimal             @default(0) @db.Decimal(38, 18)
+  totalClaimedEmoji Decimal             @default(0) @db.Decimal(38, 18)
+  totalDumpedEmoji  Decimal             @default(0) @db.Decimal(38, 18)
+  totalLotteryWonEmoji Decimal          @default(0) @db.Decimal(38, 18)
+  totalStakingRewardEmoji Decimal       @default(0) @db.Decimal(38, 18)
+  lastStakingRewardAt DateTime          @default(now())
+  fakeBalances      FakeAssetBalance[]
+  liquidityPositions LiquidityPosition[]
+  rewardClaims      RewardClaim[]
+  lotteryEntries    LotteryEntry[]
+  lotteryWins       LotteryEpoch[]      @relation("LotteryWinner")
+  metaFarmPositions MetaFarmPosition[]
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+}
+
+model LotteryEpoch {
+  id              String         @id @default(cuid())
+  epochId         Int            @unique
+  startsAt        DateTime
+  endsAt          DateTime
+  totalDumpedEmoji Decimal       @default(0) @db.Decimal(38, 18)
+  totalStEmoji    Decimal        @default(0) @db.Decimal(38, 18)
+  prizeEmoji      Decimal        @default(0) @db.Decimal(38, 18)
+  winnerWalletId  String?
+  winner          GameWallet?    @relation("LotteryWinner", fields: [winnerWalletId], references: [id], onDelete: SetNull)
+  settledAt       DateTime?
+  entries         LotteryEntry[]
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+}
+
+model LotteryEntry {
+  id             String       @id @default(cuid())
+  lotteryEpochId String
+  lotteryEpoch   LotteryEpoch @relation(fields: [lotteryEpochId], references: [id], onDelete: Cascade)
+  walletId       String
+  wallet         GameWallet   @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  stEmojiAmount  Decimal      @default(0) @db.Decimal(38, 18)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([lotteryEpochId, walletId])
+}
+
+model MetaFarmPosition {
+  id                 String     @id @default(cuid())
+  walletId           String
+  wallet             GameWallet @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  poolId             String
+  lockedEmoji        Decimal    @default(0) @db.Decimal(38, 18)
+  burnedFakeAmount   Decimal    @default(0) @db.Decimal(38, 18)
+  lpBalance          Decimal    @default(0) @db.Decimal(38, 18)
+  unharvestedEmoji   Decimal    @default(0) @db.Decimal(38, 18)
+  suppliedCount      Int        @default(0)
+  harvestClicks      Int        @default(0)
+  harvestStreakClicks Int       @default(0)
+  harvestCooldownUntil DateTime?
+  harvestBribeUnlockUntil DateTime?
+  lastHarvestAt      DateTime   @default(now())
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
+
+  @@unique([walletId, poolId])
+}
+
+model FakeAssetBalance {
+  id        String          @id @default(cuid())
+  walletId  String
+  wallet    GameWallet      @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  symbol    FakeAssetSymbol
+  balance   Decimal         @default(0) @db.Decimal(38, 18)
+  clicks    Int             @default(0)
+  streakClicks Int           @default(0)
+  cooldownUntil DateTime?
+  bribeUnlockUntil DateTime?
+  updatedAt DateTime        @updatedAt
+
+  @@unique([walletId, symbol])
+}
+
+model LiquidityPosition {
+  id             String     @id @default(cuid())
+  walletId       String
+  wallet         GameWallet @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  poolId         String
+  pair           String
+  lpBalance      Decimal    @default(0) @db.Decimal(38, 18)
+  pendingEmoji   Decimal    @default(0) @db.Decimal(38, 18)
+  unharvestedEmoji Decimal  @default(0) @db.Decimal(38, 18)
+  suppliedCount  Int        @default(0)
+  harvestClicks  Int        @default(0)
+  harvestStreakClicks Int    @default(0)
+  harvestCooldownUntil DateTime?
+  harvestBribeUnlockUntil DateTime?
+  lastHarvestAt  DateTime   @default(now())
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  @@unique([walletId, poolId])
+}
+
+model PoolState {
+  id                String   @id @default(cuid())
+  poolId            String   @unique
+  pair              String
+  reserveA          Decimal  @default(0) @db.Decimal(38, 18)
+  reserveB          Decimal  @default(0) @db.Decimal(38, 18)
+  totalLp           Decimal  @default(0) @db.Decimal(38, 18)
+  suppliedCount     Int      @default(0)
+  harvestClicks     Int      @default(0)
+  totalHarvestedEmoji Decimal @default(0) @db.Decimal(38, 18)
+  updatedAt         DateTime @updatedAt
+}
+
+model RewardClaim {
+  id          String     @id @default(cuid())
+  walletId    String
+  wallet      GameWallet @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  claimNonce  Int
+  amount      Decimal    @db.Decimal(38, 18)
+  claimHash   String     @unique
+  signature   String?
+  txHash      String?
+  claimedAt   DateTime?
+  expiresAt   DateTime
+  createdAt   DateTime   @default(now())
+
+  @@unique([walletId, claimNonce])
+}
+
+model ProtocolGameState {
+  id              String   @id @default("global")
+  vibePrice       Decimal  @default(0.0042) @db.Decimal(38, 18)
+  hype            Decimal  @default(18) @db.Decimal(10, 4)
+  jeetPressure    Decimal  @default(8) @db.Decimal(10, 4)
+  totalDumpedEmoji Decimal @default(0) @db.Decimal(38, 18)
+  metaFarmLockedEmoji Decimal @default(0) @db.Decimal(38, 18)
+  metaFarmBurnedFake Decimal @default(0) @db.Decimal(38, 18)
+  metaFarmLp         Decimal @default(0) @db.Decimal(38, 18)
+  metaFarmHarvestedEmoji Decimal @default(0) @db.Decimal(38, 18)
+  panicClicks     Int      @default(0)
+  chartPoints     Json
+  updatedAt       DateTime @updatedAt
+}
