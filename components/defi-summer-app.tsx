@@ -1397,7 +1397,7 @@ export function DeFiSummerApp() {
                   onClick={(event) => runWalletAction(event, () => openHarvestBribeModal(META_FARM.poolId, "recursive harvest"))}
                   disabled={isBusy}
                 >
-                  BRIBE DEV
+                  BRIBE
                 </button>
               ) : null}
             </div>
@@ -1484,7 +1484,7 @@ export function DeFiSummerApp() {
                       onClick={(event) => runWalletAction(event, () => openHarvestBribeModal(pool.id, `${pool.pair} harvest`))}
                       disabled={isBusy}
                     >
-                      BRIBE DEV
+                      BRIBE
                     </button>
                   ) : null}
                 </article>
@@ -1540,7 +1540,7 @@ export function DeFiSummerApp() {
                     </button>
                     {isCoolingDown ? (
                       <button type="button" className={`danger bribe-button ${!walletAddress ? "wallet-gated" : ""}`} onClick={(event) => runWalletAction(event, () => openFaucetBribeModal(asset.symbol))} disabled={isBusy}>
-                        BRIBE DEV
+                        BRIBE
                       </button>
                     ) : null}
                   </div>
